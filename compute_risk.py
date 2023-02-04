@@ -13,7 +13,7 @@ import itertools
 import warnings
 warnings.filterwarnings('ignore') 
 
-
+n_jobs = 16
 ############################################################################
 #
 # Theoretical evaluation
@@ -99,6 +99,7 @@ def comp_theoretic_risk_general(Sigma, beta0, sigma2, lam, phi, phi_s, M,
 #
 ############################################################################
     
+    
 def compute_cov(Xs, lam):
     n,p = Xs.shape
     Sigma = Xs.T @ Xs / n
@@ -112,6 +113,7 @@ def compute_cov(Xs, lam):
         T2 = M @ Sigma @ M
 
     return Sigma, M/n, T1, T2/n
+
 
 def comp_true_empirical_risk(X, Y, phi_s, lam, rho, sigma, beta0, M, replace=True):
     n,p = X.shape
@@ -199,7 +201,7 @@ def fit_predict(X, Y, X_test, method, param):
 
 
 def comp_empirical_risk(X, Y, X_test, Y_test, phi_s, method, param, 
-                        M=2, data_val=None, replace=True, 
+                        M=2, data_val=None, replace=True, bootstrap=False,
                         return_allM=False, return_pred_diff=False):
     n,p = X.shape
     Y_test = Y_test.reshape((-1,1))    
@@ -214,13 +216,13 @@ def comp_empirical_risk(X, Y, X_test, Y_test, phi_s, method, param,
         
     if replace:
         k = int(p/phi_s)
-        ids_list = [np.sort(np.random.choice(n,k,replace=False)) for j in range(M)]
+        ids_list = [np.sort(np.random.choice(n,k,replace=bootstrap)) for j in range(M)]
     else:
         k = np.floor(n/M)
         assert 1 <= k <= n
         ids_list = np.array_split(np.random.permutation(np.arange(n)), M)
         
-    with Parallel(n_jobs=8, verbose=0) as parallel:
+    with Parallel(n_jobs=n_jobs, max_nbytes=None, verbose=0) as parallel:
         res = parallel(
             delayed(fit_predict)(X[ids,:], Y[ids,:], X_eval, method, param)
             for ids in ids_list
@@ -249,8 +251,10 @@ def comp_empirical_risk(X, Y, X_test, Y_test, phi_s, method, param,
         return risk_test
     
     
-def cross_validation(X, Y, X_test, Y_test, method, param, M, nu=0.5, 
-                     replace=True, val_size=None, Kfold=False, k_list=None, return_full=False):
+def cross_validation(
+    X, Y, X_test, Y_test, method, param, M, nu=0.5, 
+    replace=True, bootstrap=False, 
+    val_size=None, Kfold=False, k_list=None, return_full=False):
     assert 0 < nu < 1
     n, p = X.shape
     
@@ -273,7 +277,7 @@ def cross_validation(X, Y, X_test, Y_test, method, param, M, nu=0.5,
     if k_list is not None:
         k_list = np.array(k_list)
         k_list = k_list[k_list<=n_train]
-    else:        
+    else:
         if replace:
             k_list = np.arange(n_base, n_train+1, n_base)
             if n_train!=k_list[-1]:
@@ -296,14 +300,16 @@ def cross_validation(X, Y, X_test, Y_test, method, param, M, nu=0.5,
                 _res_val[j,:], _res_test[j,:,:] = comp_empirical_risk(
                     X_train, Y_train, X_test, Y_test, 
                     p/k, method, param, M, data_val=(X_val, Y_val), 
-                    replace=replace, return_allM=True, return_pred_diff=True
+                    replace=replace, bootstrap=bootstrap, 
+                    return_allM=True, return_pred_diff=True
                 )
             else:
                 m = j + 1
                 _res_val[j,:m], _res_test[j,:,:m] = comp_empirical_risk(
                     X_train, Y_train, X_test, Y_test, 
                     p/k, method, param, m, data_val=(X_val, Y_val), 
-                    replace=replace, return_allM=True, return_pred_diff=True
+                    replace=replace, bootstrap=bootstrap, 
+                    return_allM=True, return_pred_diff=True
                 )
                 _res_val[j,:,m:] = _res_val[j,:,m-1]
                 _res_test[j,:,m:] = _res_test[j,:,m-1]
@@ -350,7 +356,7 @@ def risk_estimate(sq_err, method, eta):
 def comp_empirical_oobcv(
     X, Y, X_test, Y_test, phi_s, method, param, 
     M=2, M0=5, M_test=None, re_method='AVG', eta=None,
-    oobcv=True):
+    oobcv=True, bootstrap=False):
     '''
     Parameters
     ----------
@@ -377,7 +383,7 @@ def comp_empirical_oobcv(
 
     n,p = X.shape
     n_test = int(n/np.log(n)) if oobcv else 0
-    #n_test = np.maximum(10, int(n*0.05))
+    # n_test = np.minimum(int(n/np.log(n)), int(n*0.05)) if oobcv else 0
     Y_test = Y_test.reshape((-1,1))
     Y_hat = np.zeros((Y_test.shape[0]+Y.shape[0], M0))
     X_eval = np.r_[X, X_test]
@@ -391,14 +397,16 @@ def comp_empirical_oobcv(
         ids_list = [
             np.sort(
                 np.r_[
-                np.random.choice(np.where(Y[:n-n_test,0]==0)[0],int(np.mean(Y[:n-n_test,0]==0)*k),replace=False),
-                np.random.choice(np.where(Y[:n-n_test,0]==1)[0],int(np.mean(Y[:n-n_test,0]==1)*k),replace=False)
+                np.random.choice(np.where(Y[:n-n_test,0]==0)[0],
+                                 int(np.mean(Y[:n-n_test,0]==0)*k),replace=bootstrap),
+                np.random.choice(np.where(Y[:n-n_test,0]==1)[0],
+                                 int(np.mean(Y[:n-n_test,0]==1)*k),replace=bootstrap)
                 ]
             ) for j in range(M_test)]
     else:
-        ids_list = [np.sort(np.random.choice(n-n_test,k,replace=False)) for j in range(M_test)]
+        ids_list = [np.sort(np.random.choice(n-n_test,k,replace=bootstrap)) for j in range(M_test)]
     
-    with Parallel(n_jobs=8, verbose=0) as parallel:
+    with Parallel(n_jobs=n_jobs, max_nbytes=None, verbose=0) as parallel:
         res = parallel(
             delayed(fit_predict)(X[ids,:], Y[ids,:], X_eval, method, param)
             for ids in ids_list
@@ -413,15 +421,25 @@ def comp_empirical_oobcv(
     if oobcv:
         dev_eval = Y_hat[:-Y_test.shape[0],:M0] - Y
         err_eval = dev_eval**2
-        risk_oob_1 = np.mean([
-            risk_estimate(np.delete(err_eval[:,j], ids_list[j]), re_method, eta) 
-            for j in np.arange(M0)])
-        risk_oob_2 = np.mean([
-            risk_estimate(
-                np.mean(np.delete(dev_eval[:,[i,j]], np.union1d(ids_list[i], ids_list[j]), axis=0), axis=1)**2,
-                re_method, eta
-            ) for i,j in itertools.combinations(np.arange(M0), 2)])
-        
+
+        with Parallel(n_jobs=n_jobs, max_nbytes=None, verbose=0) as parallel:
+            res_1 = parallel(
+                delayed(lambda j:risk_estimate(
+                    np.delete(err_eval[:,j], ids_list[j]), re_method, eta)
+                       )(j)
+                for j in np.arange(M0)
+            )
+            res_2 = parallel(
+                delayed(lambda i,j:risk_estimate(
+                    np.mean(
+                        np.delete(dev_eval[:,[i,j]], 
+                                  np.union1d(ids_list[i], ids_list[j]), axis=0), axis=1)**2,
+                    re_method, eta
+                ))(i,j)
+                for i,j in itertools.combinations(np.arange(M0), 2)
+            )
+        risk_oob_1 = np.mean(res_1)
+        risk_oob_2 = np.mean(res_2)
         risk_oob = - (1-2/M) * risk_oob_1 + 2*(1-1/M) * risk_oob_2
     else:
         risk_oob = None
@@ -433,7 +451,8 @@ def comp_empirical_oobcv(
 
 
 def cross_validation_oob(X, Y, X_test, Y_test, method, param, M, M0, M_test=None, M_max=np.inf,
-                         nu=0.5, return_full=False, k_list=None, delta=0., re_method='AVG', eta=None):
+                         nu=0.5, return_full=False, k_list=None, bootstrap=False,
+                         delta=0., re_method='AVG', eta=None):
     n, p = X.shape
     n_base = int(n**nu)
     n_train = int(n*(1-1/np.log(n)))
@@ -451,8 +470,10 @@ def cross_validation_oob(X, Y, X_test, Y_test, method, param, M, M0, M_test=None
     res_test = np.full((len(k_list)+1,M_test), np.inf)    
 
     for j,k in enumerate(k_list):
-        res_val[j,:], res_test[j,:] = comp_empirical_oobcv(X, Y, X_test, Y_test, 
-            p/k, method, param, M, M0=M0, M_test=M_test, re_method=re_method, eta=eta)
+        res_val[j,:], res_test[j,:] = comp_empirical_oobcv(
+            X, Y, X_test, Y_test, 
+            p/k, method, param, M, M0=M0, M_test=M_test, 
+            re_method=re_method, eta=eta, bootstrap=bootstrap)
             
     # null predictor
     if method=='logistic':
@@ -476,29 +497,34 @@ def cross_validation_oob(X, Y, X_test, Y_test, method, param, M, M0, M_test=None
         if M_hat>M_test and k_hat>0:
             M_hat = int(np.minimum(M_hat, M_test))
             _, risk_cv = comp_empirical_oobcv(X, Y, X_test, Y_test, 
-                    p/k_hat, method, param, M_hat, M0=M_hat, M_test=M_hat, re_method=re_method, eta=eta, oobcv=False)
+                    p/k_hat, method, param, M_hat, M0=M_hat, M_test=M_hat, re_method=re_method, eta=eta, 
+                                              oobcv=False, bootstrap=bootstrap)
         else:
             risk_cv = res_test[j, np.arange(M_test)]
 
         return k_hat, M_hat, risk_cv
 
 
-# def compute_prediction_risk(X, Y, X_test, Y_test, method, param, M, nu=0.5):
-#     n, p = X.shape
-#     n_base = int(n**nu)
-    
-#     k_list = np.arange(n_base, n+1, n_base)
-#     if n!=k_list[-1]:
-#         k_list = np.append(k_list, n)
-    
-#     res_val = np.full((len(k_list)+1,M), np.inf)
-#     res_test = np.full((len(k_list)+1,M), np.inf)
-    
-#     for j,k in enumerate(k_list):
-#         res_val[j,:], res_test[j,:] = comp_empirical_oobcv(X, Y, X_test, Y_test, 
-#             p/k, method, param, M, M0=1, M_test=M)
-            
-#     # null predictor
-#     _, res_test[-1,:] = np.mean(Y**2), np.mean(Y_test**2)
+def compute_prediction_risk(X, Y, X_test, Y_test, method, param, 
+                            M, k_list=None, nu=0.5, bootstrap=False):
+    n, p = X.shape
+    n_base = int(n**nu)
 
-#     return k_list, res_test
+    if k_list is not None:
+        k_list = np.array(k_list)
+    else:
+        k_list = np.arange(n_base, n+1, n_base)
+        if n!=k_list[-1]:
+            k_list = np.append(k_list, n)
+    
+    res_val = np.full((len(k_list)+1,M), np.inf)
+    res_test = np.full((len(k_list)+1,M), np.inf)
+    
+    for j,k in enumerate(k_list):
+        res_val[j,:], res_test[j,:] = comp_empirical_oobcv(X, Y, X_test, Y_test, 
+            p/k, method, param, M, M0=1, M_test=M, bootstrap=bootstrap)
+            
+    # null predictor
+    res_val[-1,:], res_test[-1,:] = np.mean(Y**2), np.mean(Y_test**2)
+
+    return np.append(k_list,0), res_val, res_test

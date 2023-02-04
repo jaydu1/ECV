@@ -10,26 +10,29 @@ from compute_risk import *
 from generate_data import *
 
 
+bootstrap = True
+bagging = 'bagging' if bootstrap else 'subagging'
 method_list = ['ridge', 'lasso', 'logistic', 'kNN']
 method = method_list[int(sys.argv[1])]
-path_result = 'result/ex2/{}/'.format(method)
+path_result = 'result/ex2/{}/{}/'.format(bagging, method)
 os.makedirs(path_result, exist_ok=True)
 
 
-def run_one_simulation(n, phi, rho, sigma, method, lam, M, i):
+def run_one_simulation(n, phi, rho, sigma, method, lam, M, i, bootstrap=bootstrap):
     np.random.seed(i)
     beta0, X, Y, X_test, Y_test = generate_data(n, phi, rho, sigma)
     if method=='logistic':
         Y_test = np.where(Y_test>=np.median(Y), 1, 0)
         Y = np.where(Y>=np.median(Y), 1, 0)
         
-    k_list, risk = compute_prediction_risk(X, Y, X_test, Y_test, method, lam, M, nu=0.5)
+    k_list, _, risk = compute_prediction_risk(X, Y, X_test, Y_test, method, lam, M, 
+                                           nu=0.5, bootstrap=bootstrap)
     res = np.concatenate([
-        np.full((risk.shape[0],1), phi), np.append(phi*n/k_list,np.inf)[:,None], risk], axis=-1) 
+        np.full((risk.shape[0],1), phi), np.append(phi*n/k_list[:-1],np.inf)[:,None], risk], axis=-1) 
     return res
 
 
-lam_list = np.linspace(0.,1.,11)#np.append(0, np.logspace(-9, 0, 10))
+lam_list = np.linspace(0.,1.,11)
 
 M = 50
 n = 1000
@@ -60,6 +63,7 @@ with Parallel(n_jobs=8, verbose=0, timeout=99999) as parallel:
         for phi in tqdm(np.logspace(-1, 1, 50), desc = 'phi'):
             if df_res.shape[0]>0 and phi<=df_res['phi'].max():
                 continue
+
             rho = sigma * np.sqrt(SNR)
             res = parallel(
                 delayed(run_one_simulation)(n, phi, rho, sigma, method, lam, M, i) for i in tqdm(range(n_simu))

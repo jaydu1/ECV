@@ -9,13 +9,15 @@ sns.set_theme()
 from compute_risk import *
 from generate_data import *
 
-
+bootstrap = True
+bagging = 'bagging' if bootstrap else 'subagging'
 method = 'tree'
-path_result = 'result/ex3/{}/test/'.format(method)
+path_result = 'result/ex3/{}/{}/'.format(bagging,method)
 os.makedirs(path_result, exist_ok=True)
 
 
-def oobcv_tree(X, Y, X_test, Y_test, method, param, M_max, M0, ratio_holdout=1./6):
+def oobcv_tree(X, Y, X_test, Y_test, method, param, M_max, M0, 
+               ratio_holdout=1./6, bootstrap=bootstrap):
     n, p = X.shape
     
     M_list = np.append(np.arange(1,M_max+1), np.inf)
@@ -26,7 +28,7 @@ def oobcv_tree(X, Y, X_test, Y_test, method, param, M_max, M0, ratio_holdout=1./
     id_val = np.random.choice(n,n_val,replace=False)
     _, res_val = comp_empirical_oobcv(
         np.delete(X, id_val, axis=0), np.delete(Y, id_val, axis=0), X[id_val,:], Y[id_val], 
-            p/n, method, param, M_list, M0=2, M_test=2, oobcv=False)
+            p/n, method, param, M_list, M0=2, M_test=2, oobcv=False, bootstrap=bootstrap)
 
     risk_holdout = - (1-2/M_list) * res_val[0] + 2*(1-1/M_list) * res_val[1]
     

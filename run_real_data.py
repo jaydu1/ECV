@@ -60,17 +60,19 @@ scaler.fit(Y_train)
 Y_train = scaler.transform(Y_train)
 Y_test = scaler.transform(Y_test)
 
+
+bootstrap = int(sys.argv[3])==1
+bagging = 'bagging' if bootstrap else 'subagging'
 method = 'tree'
-path_result = 'result/ex7/{}/{}/'.format(celltype,method)
+path_result = 'result/ex7/{}/{}/{}/'.format(celltype,bagging,method)
 os.makedirs(path_result, exist_ok=True)
 
 M = 50
 M0 = 20
-M_list = [50,100, 250]
-res_time = []
+M_list = [50, 100, 250]
 file_name_time = path_result+'res_time_{}.csv'.format(method)
-res_time = pd.DataFrame(columns=['ADT_name','lam','oobcv','splitcv','kfoldcv'])
-
+res_time = pd.DataFrame(columns=['ADT_name','lam','splitcv','kfoldcv']
+        +['oobcv-{}'.format(_M) for _M in M_list])
 
 lam = None
 for j,ADT_name in tqdm(enumerate(ADT_names)):
@@ -88,12 +90,30 @@ for j,ADT_name in tqdm(enumerate(ADT_names)):
     _k_list = k_list[k_list <= (n//5 + 1)]
 
 
+    # test for all M and k
+    for i in range(5):
+        print(i)
+        file_name = path_result+'res_ADT_{}_test_{}.csv'.format(j,i)
+        k_list, risk_val, risk_test = compute_prediction_risk(
+            X_train, Y_train[:,j:j+1], X_test, Y_test[:,j:j+1], 
+            method, lam, M, k_list=_k_list, bootstrap=bootstrap)
+        res = np.concatenate([k_list[:,None], risk_val, risk_test], axis=-1)
+        res = pd.DataFrame(res, columns=np.concatenate([
+            ['k_list'],
+            np.char.add('val-', np.arange(1,M+1).astype(str)),
+            np.char.add('test-', np.arange(1,M+1).astype(str))
+        ]))
+        res['ADT_name'] = ADT_name
+        res.to_csv(file_name)
+
+
     # split validation
     file_name = path_result+'res_ADT_{}_splitcv.csv'.format(j)
     t0 = time.time()
     k_list, risk_val, risk_test = cross_validation(
         X_train, Y_train[:,j:j+1], X_test, Y_test[:,j:j+1], 
-        method, lam, M, val_size=1/6., Kfold=False, k_list=_k_list, return_full=True)        
+        method, lam, M, val_size=1/6., Kfold=False, k_list=_k_list, 
+        return_full=True, bootstrap=bootstrap)        
     t1 = time.time() - t0
     res = np.concatenate([k_list[:,None], risk_val, risk_test], axis=-1)
     res = pd.DataFrame(res, columns=np.concatenate([
@@ -102,17 +122,17 @@ for j,ADT_name in tqdm(enumerate(ADT_names)):
         np.char.add('test-', np.arange(1,M+1).astype(str))
     ]))
     res['ADT_name'] = ADT_name
-    res.to_csv(file_name)
     print(t1) 
     _res_time.append(t1)
 
-
+    
     # K-fold CV
     file_name = path_result+'res_ADT_{}_kfoldcv.csv'.format(j)
     t0 = time.time()
     k_list, risk_val, risk_test = cross_validation(
         X_train, Y_train[:,j:j+1], X_test, Y_test[:,j:j+1], 
-        method, lam, M, Kfold=5, k_list=_k_list, return_full=True)        
+        method, lam, M, Kfold=5, k_list=_k_list, 
+        return_full=True, bootstrap=bootstrap)        
     t1 = time.time() - t0
     res = np.concatenate([k_list[:,None], risk_val, risk_test], axis=-1)
     res = pd.DataFrame(res, columns=np.concatenate([
@@ -121,7 +141,6 @@ for j,ADT_name in tqdm(enumerate(ADT_names)):
         np.char.add('test-', np.arange(1,M+1).astype(str))
     ]))
     res['ADT_name'] = ADT_name
-    res.to_csv(file_name)
     print(t1)
     _res_time.append(t1)
 
@@ -131,7 +150,8 @@ for j,ADT_name in tqdm(enumerate(ADT_names)):
         t0 = time.time()
         k_list, risk_val, risk_test = cross_validation_oob(
             X_train, Y_train[:,j:j+1], X_test[:1,:], Y_test[:1,j:j+1], 
-            method, lam, _M, M0=M0, M_test=_M, k_list=_k_list, return_full=False)
+            method, lam, _M, M0=M0, M_test=_M, k_list=_k_list, 
+            return_full=True, bootstrap=bootstrap)
         t1 = time.time() - t0
         print(t1)
         _res_time.append(t1)
@@ -141,7 +161,8 @@ for j,ADT_name in tqdm(enumerate(ADT_names)):
         t0 = time.time()
         k_list, risk_val, risk_test = cross_validation_oob(
             X_train, Y_train[:,j:j+1], X_test, Y_test[:,j:j+1], 
-            method, lam, _M, M0=M0, M_test=_M, return_full=True)
+            method, lam, _M, M0=M0, M_test=_M, 
+            return_full=True, bootstrap=bootstrap)
         t1 = time.time() - t0
         res = np.concatenate([k_list[:,None], risk_val, risk_test], axis=-1)
         res = pd.DataFrame(res, columns=np.concatenate(
@@ -152,11 +173,12 @@ for j,ADT_name in tqdm(enumerate(ADT_names)):
         res['ADT_name'] = ADT_name
         res.to_csv(file_name)
         print('oobcv-{}:'.format(_M),t1)
+    
 
-        
     res_time = pd.concat([
         res_time,
         pd.DataFrame([_res_time], columns=
         ['ADT_name','lam','splitcv','kfoldcv'] + ['oobcv-{}'.format(_M) for _M in M_list])
     ])
     res_time.to_csv(file_name_time)
+    

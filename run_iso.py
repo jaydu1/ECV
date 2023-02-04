@@ -9,13 +9,17 @@ sns.set_theme()
 from compute_risk import *
 from generate_data import *
 
+
+bootstrap = True
+bagging = 'bagging' if bootstrap else 'subagging'
 method_list = ['ridge', 'lasso', 'logistic', 'kNN']
 method = method_list[int(sys.argv[1])]
-path_result = 'result/ex1/{}/'.format(method)
+path_result = 'result/ex1/{}/{}/'.format(bagging, method)
 os.makedirs(path_result, exist_ok=True)
 
 
-def run(phi, method, lam, SNR):
+
+def run(phi, method, lam, SNR, bootstrap=bootstrap):
     n = 1000
 
     p = int(n*phi)
@@ -43,8 +47,9 @@ def run(phi, method, lam, SNR):
                 Y_test = np.where(Y_test>=np.median(Y), 1, 0)
                 Y = np.where(Y>=np.median(Y), 1, 0)
 
-            oobcv_emp, risk_emp = comp_empirical_oobcv(X, Y, X_test, Y_test, phi_s, 
-                                                       method, lam, M0=M0, M=M_list, M_test=M_max)
+            oobcv_emp, risk_emp = comp_empirical_oobcv(
+                X, Y, X_test, Y_test, phi_s, 
+                method, lam, M0=M0, M=M_list, M_test=M_max, bootstrap=bootstrap)
 #             B0, V0, risk_the = comp_theoretic_risk(rho, sigma, lam, phi, phi_s, M_list)
             
             _df = pd.DataFrame(
@@ -64,8 +69,6 @@ def run(phi, method, lam, SNR):
     else:
         res.to_csv(path_result+'res_phi_{:.01f}_lam_{:.01f}_SNR_{:.02f}.csv'.format(
             phi, lam, SNR))
-    
-
     
     
 if method in ['tree', 'kNN']:
