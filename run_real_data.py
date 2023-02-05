@@ -71,7 +71,7 @@ M = 50
 M0 = 20
 M_list = [50, 100, 250]
 file_name_time = path_result+'res_time_{}.csv'.format(method)
-res_time = pd.DataFrame(columns=['ADT_name','lam','splitcv','kfoldcv']
+res_time = pd.DataFrame(columns=['ADT_name','lam','splitcv','kfoldcv-3','kfoldcv-5']
         +['oobcv-{}'.format(_M) for _M in M_list])
 
 lam = None
@@ -127,22 +127,23 @@ for j,ADT_name in tqdm(enumerate(ADT_names)):
 
     
     # K-fold CV
-    file_name = path_result+'res_ADT_{}_kfoldcv.csv'.format(j)
-    t0 = time.time()
-    k_list, risk_val, risk_test = cross_validation(
-        X_train, Y_train[:,j:j+1], X_test, Y_test[:,j:j+1], 
-        method, lam, M, Kfold=5, k_list=_k_list, 
-        return_full=True, bootstrap=bootstrap)        
-    t1 = time.time() - t0
-    res = np.concatenate([k_list[:,None], risk_val, risk_test], axis=-1)
-    res = pd.DataFrame(res, columns=np.concatenate([
-        ['k_list'],
-        np.char.add('val-', np.arange(1,M+1).astype(str)),
-        np.char.add('test-', np.arange(1,M+1).astype(str))
-    ]))
-    res['ADT_name'] = ADT_name
-    print(t1)
-    _res_time.append(t1)
+    for K in [3,5]:
+        file_name = path_result+'res_ADT_{}_kfoldcv_{}.csv'.format(j,K)
+        t0 = time.time()
+        k_list, risk_val, risk_test = cross_validation(
+            X_train, Y_train[:,j:j+1], X_test, Y_test[:,j:j+1], 
+            method, lam, M, Kfold=K, k_list=_k_list, 
+            return_full=True, bootstrap=bootstrap)        
+        t1 = time.time() - t0
+        res = np.concatenate([k_list[:,None], risk_val, risk_test], axis=-1)
+        res = pd.DataFrame(res, columns=np.concatenate([
+            ['k_list'],
+            np.char.add('val-', np.arange(1,M+1).astype(str)),
+            np.char.add('test-', np.arange(1,M+1).astype(str))
+        ]))
+        res['ADT_name'] = ADT_name
+        print(t1)
+        _res_time.append(t1)
 
         
     # OOBCV M bags
@@ -178,7 +179,7 @@ for j,ADT_name in tqdm(enumerate(ADT_names)):
     res_time = pd.concat([
         res_time,
         pd.DataFrame([_res_time], columns=
-        ['ADT_name','lam','splitcv','kfoldcv'] + ['oobcv-{}'.format(_M) for _M in M_list])
+        ['ADT_name','lam','splitcv','kfoldcv-3','kfoldcv-5'] + ['oobcv-{}'.format(_M) for _M in M_list])
     ])
     res_time.to_csv(file_name_time)
     
