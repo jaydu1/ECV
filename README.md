@@ -1,5 +1,7 @@
 # ECV
+
 Extrapolated cross-validation for randomized ensembles based on out-of-bag estimates.
+This repository contains code for reproducing results in the paper ``Extrapolated cross-validation for randomized ensembles'' [[arXiv]](https://arxiv.org/abs/2302.13511).
 The goal is to tune both the ensemble size $M$ and subsample/bootstrap size $k$.
 The experiments demonstrate the utility of ECV on bagging (bootstrap aggregating) and subagging (subsample aggregating) with various predictors:
 
